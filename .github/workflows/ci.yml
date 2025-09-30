@@ -1,0 +1,40 @@
+name: Internal Genuis CI Pipeline
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  lint-backend:
+    runs-on: ubuntu-latest
+    name: Backend Linting
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create environment file
+        run: |
+          cat > .env << EOF
+          GOOGLE_API_KEY=test_key_for_ci
+          CHROMA_HOST=chroma
+          REDIS_URL=redis://redis:6379/0
+          DEBUG=true
+          EOF
+
+      - name: Build backend service
+        run: docker compose build backend
+
+      - name: Run backend linting with ruff
+        run: |
+          docker compose run --rm backend uv run ruff check .
+          docker compose run --rm backend uv run ruff format --check .
