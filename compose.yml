@@ -3,11 +3,42 @@ services:
     backend:
         #container_name: backend
         build:
-            context: /backend
+            context: ./backend
         ports:
             - 8000:8000
         depends_on:
             - chroma
+            - redis
+        volumes:
+            - ./data:/data
+        environment:
+            - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+            - CHROMA_HOST=${CHROMA_HOST}
+            - CHROMA_PORT=${CHROMA_PORT}
+            - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+            - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+        develop:
+            watch:
+                - path: ./backend
+                  action: sync+restart
+                  ignore: pyproject.toml
+                  target: /backend
+                - path: ./backend/pyproject.toml
+                  action: rebuild
+                  target: /backend/pyproject.toml
+        command:
+            [
+                "uv",
+                "run",
+                "fastapi",
+                "dev",
+                "main.py",
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8000",
+            ]
+
     chroma:
         image: chromadb/chroma:latest
         ports:
@@ -18,6 +49,55 @@ services:
             - IS_PERSISTENT=TRUE
             - PERSIST_DIRECTORY=/chroma/chroma
             - ANONYMIZED_TELEMETRY=TRUE
+
+    redis:
+        image: redis:latest
+        ports:
+            - "6379:6379"
+
+    celery-worker:
+        build:
+            context: ./backend
+        depends_on:
+            - redis
+        volumes:
+            - ./data:/data
+        environment:
+            - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+            - CHROMA_HOST=${CHROMA_HOST}
+            - CHROMA_PORT=${CHROMA_PORT}
+            - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+            - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+            - DEBUG=${DEBUG}
+        command:
+            [
+                "uv",
+                "run",
+                "celery",
+                "-A",
+                "celery_worker:celery",
+                "worker",
+                "--loglevel=info",
+            ]
+        develop:
+            watch:
+                - path: ./backend
+                  action: sync+restart
+                  ignore: pyproject.toml
+                  target: /backend
+                - path: ./backend/pyproject.toml
+                  action: rebuild
+                  target: /backend/pyproject.toml
+
+    chromadb-admin:
+        image: fengzhichao/chromadb-admin
+        ports:
+            - "3001:3001"
+        environment:
+            - CHROMA_SERVER_HOST=chroma
+            - CHROMA_SERVER_HTTP_PORT=8000
+        depends_on:
+            - chroma
 
 volumes:
     chroma_data:

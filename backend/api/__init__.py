@@ -1,0 +1,1 @@
+from .document_controller import router as document_router
