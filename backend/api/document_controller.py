@@ -1,5 +1,7 @@
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, status
+from schemas.chat_schemas import ChatRequest, ChatResponse
+from services.rag_service import RAGService
 from utils import validate_document_type, get_supported_extensions
 
 # from ..celery_worker import process_document_task
@@ -7,7 +9,7 @@ from schemas.upload_schemas import UploadResponse
 from celery_worker import process_document_task
 
 router = APIRouter()
-
+rag_service = RAGService()
 # Use the mounted data directory for uploads
 UPLOAD_DIR = Path("/data")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -37,3 +39,18 @@ async def upload_document(file: UploadFile = File(...)):
     # Start the background task to process the document
     task = process_document_task.delay(str(file_path))
     return {"task_id": task.id, "filename": file.filename}
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat_with_document(request: ChatRequest):
+    """
+    An endpoint to chat with the document.
+
+    Args:
+        request: The chat request with the user's question.
+
+    Returns:
+        A response with the generated answer.
+    """
+    response = rag_service.invoke(request.question)
+    return {"response": response}

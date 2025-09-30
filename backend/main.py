@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-app.include_router(document_router, prefix="/api/documents", tags=["documents"])
+app.include_router(document_router, prefix="/api", tags=["api"])
 
 
 @app.get("/")

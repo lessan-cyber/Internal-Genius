@@ -27,6 +27,12 @@ ENV PYTHONPATH=/backend
 
 COPY . .
 
+RUN useradd --create-home --shell /bin/bash backend && \
+    chown -R backend:backend /backend && \
+    mkdir -p /data && \
+    chown -R backend:backend /data
+
+USER backend
 
 EXPOSE 8000
 
