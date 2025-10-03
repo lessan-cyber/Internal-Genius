@@ -1,117 +1,127 @@
 ---
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+  volumes:
+    - ./data:/data
+    - ./backend/.venv:/backend/.venv
+
 services:
-    backend:
-        #container_name: backend
-        build:
-            context: ./backend
-        ports:
-            - 8000:8000
-        depends_on:
-            - chroma
-            - redis
-        volumes:
-            - ./data:/data
-        environment:
-            - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
-            - CHROMA_HOST=${CHROMA_HOST}
-            - CHROMA_PORT=${CHROMA_PORT}
-            - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-            - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-        develop:
-            watch:
-                - path: ./backend
-                  action: sync+restart
-                  ignore: pyproject.toml
-                  target: /backend
-                - path: ./backend/pyproject.toml
-                  action: rebuild
-                  target: /backend/pyproject.toml
-        command:
-            [
-                "uv",
-                "run",
-                "fastapi",
-                "dev",
-                "main.py",
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8000",
-            ]
+  backend:
+    <<: *backend-common
+    ports:
+      - 8000:8000
+    depends_on:
+      chroma:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    environment: &backend-env
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+      CHROMA_HOST: ${CHROMA_HOST}
+      CHROMA_PORT: ${CHROMA_PORT}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    develop:
+      watch:
+        - path: ./backend
+          action: sync+restart
+          ignore:
+            - pyproject.toml
+            - uv.lock
+            - .venv
+          target: /backend
+        - path: ./backend/pyproject.toml
+          action: rebuild
+        - path: ./backend/uv.lock
+          action: rebuild
+    command:
+      - "uv"
+      - "run"
+      - "fastapi"
+      - "dev"
+      - "main.py"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8000"
 
-    chroma:
-        image: chromadb/chroma:latest
-        ports:
-            - "8001:8000"
-        volumes:
-            - chroma_data:/chroma/chroma
-        environment:
-            - IS_PERSISTENT=TRUE
-            - PERSIST_DIRECTORY=/chroma/chroma
-            - ANONYMIZED_TELEMETRY=${CHROMA_TELEMETRY:-TRUE}
-        healthcheck:
-            test:
-                ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-            interval: 30s
-            timeout: 10s
-            retries: 3
+  chroma:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: "/chroma/chroma"
+      ANONYMIZED_TELEMETRY: ${CHROMA_TELEMETRY:-TRUE}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
-    redis:
-        image: redis:latest
-        ports:
-            - "6379:6379"
-        volumes:
-            - redis_data:/data
-        healthcheck:
-            test: ["CMD", "redis-cli", "ping"]
-            interval: 10s
-            timeout: 5s
-            retries: 5
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-    celery-worker:
-        build:
-            context: ./backend
-        depends_on:
-            - redis
-        volumes:
-            - ./data:/data
-        environment:
-            - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
-            - CHROMA_HOST=${CHROMA_HOST}
-            - CHROMA_PORT=${CHROMA_PORT}
-            - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-            - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
-            - DEBUG=${DEBUG:-flase}
-        command:
-            [
-                "uv",
-                "run",
-                "celery",
-                "-A",
-                "celery_worker:celery",
-                "worker",
-                "--loglevel=info",
-            ]
-        develop:
-            watch:
-                - path: ./backend
-                  action: sync+restart
-                  ignore: pyproject.toml
-                  target: /backend
-                - path: ./backend/pyproject.toml
-                  action: rebuild
-                  target: /backend/pyproject.toml
+  celery-worker:
+    <<: *backend-common
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      <<: *backend-env
+      DEBUG: ${DEBUG:-false}
+    command:
+      - "uv"
+      - "run"
+      - "celery"
+      - "-A"
+      - "celery_worker:celery"
+      - "worker"
+      - "--loglevel=info"
+    develop:
+      watch:
+        - path: ./backend
+          action: sync+restart
+          ignore:
+            - pyproject.toml
+            - uv.lock
+            - .venv
+          target: /backend
+        - path: ./backend/pyproject.toml
+          action: rebuild
+        - path: ./backend/uv.lock
+          action: rebuild
 
-    chromadb-admin:
-        image: fengzhichao/chromadb-admin
-        ports:
-            - "3001:3001"
-        environment:
-            - CHROMA_SERVER_HOST=chroma
-            - CHROMA_SERVER_HTTP_PORT=8000
-        depends_on:
-            - chroma
+  chromadb-admin:
+    image: fengzhichao/chromadb-admin
+    ports:
+      - "3001:3001"
+    environment:
+      CHROMA_SERVER_HOST: chroma
+      CHROMA_SERVER_HTTP_PORT: 8000
+    depends_on:
+      chroma:
+        condition: service_healthy
 
 volumes:
-    chroma_data:
-    redis_data:
+  chroma_data:
+  redis_data:

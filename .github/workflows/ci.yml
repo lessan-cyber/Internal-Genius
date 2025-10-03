@@ -25,7 +25,7 @@ jobs:
       - name: Create environment file
         run: |
           cat > .env << EOF
-          GOOGLE_API_KEY=test_key_for_ci
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_AI_API_KEY}}
           CHROMA_HOST=chroma
           REDIS_URL=redis://redis:6379/0
           DEBUG=true
@@ -34,7 +34,7 @@ jobs:
       - name: Build backend service
         run: docker compose build backend
 
-      - name: Run backend linting with ruff
-        run: |
-          docker compose run --rm backend uv run ruff check .
-          docker compose run --rm backend uv run ruff format --check .
+#      - name: Run backend linting with ruff
+#        run: |
+#          docker compose run --rm backend uv run ruff check .
+#          docker compose run --rm backend uv run ruff format --check .

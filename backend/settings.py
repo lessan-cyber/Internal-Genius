@@ -10,9 +10,9 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = "chroma"
     CHROMA_PORT: int = 8000
     EMBEDDING_MODEL: str = "models/text-embedding-004"
-    LLM_MODEL: str = "gemini-1.5-flash-latest"
+    LLM_MODEL: str = "Gemini 2.0 Flash-Lite"
     TEMPERATURE: float = 0.3
-    SYSTEM_PROMPT_PATH: str = "backend/prompts/system_prompt.md"
+    SYSTEM_PROMPT_PATH: str = "prompts/system_prompt.md"
     CELERY_BROKER_URL: str = "redis://redis:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
 

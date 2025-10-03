@@ -1,8 +1,25 @@
-.venv
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+
+# Python
+.venv/
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDE
+.idea/
+.vscode/
+.ropeproject/
+
+# Other
 .env
-.ropeproject
-rag_collecttion
-README.md
-AGENTS.md
-docs
-LICENSE
+data/

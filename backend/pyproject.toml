@@ -17,8 +17,11 @@ dependencies = [
     "numpy>=2.3.3",
     "pydantic-settings>=2.11.0",
     "redis>=6.4.0",
+    "sentence-transformers>=5.1.1",
     "sqlalchemy>=2.0.43",
     "torch>=2.8.0",
+    "torchvision",
+    "torchaudio",
 ]
 
 [dependency-groups]
@@ -27,5 +30,6 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "pytest-mock>=3.15.1",
     "types-redis>=4.6.0.20241004",
 ]

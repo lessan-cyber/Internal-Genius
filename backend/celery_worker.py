@@ -2,17 +2,12 @@ import sys
 from pathlib import Path
 from typing import Dict, Any, List
 import logging
-
-# Add backend directory to Python path for consistent imports
-backend_dir = Path(__file__).parent
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
-
 from celery import Celery
 from settings import settings
 from services.document_service import DocumentService
 from services.embedding_service import EmbeddingService
 from repositories.vector_store_repository import VectorStoreRepository
+
 
 # Configure logging
 logging.basicConfig(

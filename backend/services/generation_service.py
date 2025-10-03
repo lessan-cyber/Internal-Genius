@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Dict, Any
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_google_genai import ChatGoogleGenerativeAI
 from settings import settings
@@ -13,13 +13,19 @@ class GenerationService:
         """
         Initializes the GenerationService.
         """
-        with open("backend/prompts/system_prompt.md", "r") as f:
+        with open("prompts/system_prompt.md", "r") as f:
             self.system_prompt = f.read()
 
+        with open("prompts/hyde_prompt.md", "r") as f:
+            self.hyde_prompt = f.read()
+
         self.llm = ChatGoogleGenerativeAI(
-            model=settings.LLM_MODEL, temperature=settings.TEMPERATURE
+            model=settings.LLM_MODEL,
+            temperature=settings.TEMPERATURE,
+            api_key=settings.GOOGLE_AI_API_KEY,
         )
         self.prompt_template = ChatPromptTemplate.from_template(self.system_prompt)
+        self.hyde_prompt_template = ChatPromptTemplate.from_template(self.hyde_prompt)
 
     def generate_response(self, retrieved_docs: Dict[str, Any], question: str) -> str:
         """
@@ -42,4 +48,18 @@ class GenerationService:
 
         chain = self.prompt_template | self.llm
         response = chain.invoke({"context": context, "question": question})
+        return response.content
+
+    def generate_hypothetical_document(self, question: str) -> str:
+        """
+        Generates a hypothetical document to answer the user's question.
+
+        Args:
+            question: The user's question.
+
+        Returns:
+            The generated hypothetical document.
+        """
+        chain = self.hyde_prompt_template | self.llm
+        response = chain.invoke({"question": question})
         return response.content
