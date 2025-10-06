@@ -1,127 +1,182 @@
 ---
-x-backend-common: &backend-common
-  build:
-    context: ./backend
-  volumes:
-    - ./data:/data
-    - ./backend/.venv:/backend/.venv
+# Common environment variables
+x-backend-env: &backend-env
+    GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+    CHROMA_HOST: ${CHROMA_HOST}
+    CHROMA_PORT: ${CHROMA_PORT}
+    CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+    CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
 
 services:
-  backend:
-    <<: *backend-common
-    ports:
-      - 8000:8000
-    depends_on:
-      chroma:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    environment: &backend-env
-      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
-      CHROMA_HOST: ${CHROMA_HOST}
-      CHROMA_PORT: ${CHROMA_PORT}
-      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
-      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
-    develop:
-      watch:
-        - path: ./backend
-          action: sync+restart
-          ignore:
-            - pyproject.toml
-            - uv.lock
-            - .venv
-          target: /backend
-        - path: ./backend/pyproject.toml
-          action: rebuild
-        - path: ./backend/uv.lock
-          action: rebuild
-    command:
-      - "uv"
-      - "run"
-      - "fastapi"
-      - "dev"
-      - "main.py"
-      - "--host"
-      - "0.0.0.0"
-      - "--port"
-      - "8000"
+    # ============================================
+    # FastAPI Backend (Lightweight - 800MB-1.5GB)
+    # ============================================
+    backend:
+        build:
+            context: ./backend
+            dockerfile: Dockerfile.api
+            cache_from:
+                - type=registry,ref=your-registry/internal-genius-api:cache
+        image: internal-genius-api:latest
+        container_name: backend-api
+        ports:
+            - "8000:8000"
+        volumes:
+            - ./data:/data
+            - api-model-cache:/model-cache # For lightweight embedding models
+        environment:
+            <<: *backend-env
+        depends_on:
+            chroma:
+                condition: service_started
+            redis:
+                condition: service_healthy
+            celery-worker:
+                condition: service_started
 
-  chroma:
-    image: chromadb/chroma:latest
-    ports:
-      - "8001:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-    environment:
-      IS_PERSISTENT: "TRUE"
-      PERSIST_DIRECTORY: "/chroma/chroma"
-      ANONYMIZED_TELEMETRY: ${CHROMA_TELEMETRY:-TRUE}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 10s
+        develop:
+            watch:
+                - path: ./backend
+                  action: sync+restart
+                  ignore:
+                      - pyproject.toml
+                      - uv.lock
+                      - .venv
+                  target: /backend
+                - path: ./backend/pyproject.toml
+                  action: rebuild
+                - path: ./backend/uv.lock
+                  action: rebuild
+        command:
+            - "uv"
+            - "run"
+            - "fastapi"
+            - "dev"
+            - "main.py"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
 
-  redis:
-    image: redis:latest
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # ============================================
+    # Celery Worker (Heavy ML/OCR - 8-12GB)
+    # ============================================
+    celery-worker:
+        build:
+            context: ./backend
+            dockerfile: Dockerfile.worker
+            cache_from:
+                - type=registry,ref=your-registry/internal-genius-worker:cache
+        image: internal-genius-worker:latest
+        container_name: celery-worker
+        volumes:
+            - ./data:/data
+            - worker-model-cache:/model-cache # Persist heavy models
+        environment:
+            <<: *backend-env
+            DEBUG: ${DEBUG:-false}
+            # Worker-specific settings
+            CELERYD_PREFETCH_MULTIPLIER: 1
+            CELERYD_MAX_TASKS_PER_CHILD: 10
+        depends_on:
+            redis:
+                condition: service_healthy
 
-  celery-worker:
-    <<: *backend-common
-    depends_on:
-      redis:
-        condition: service_healthy
-      backend:
-        condition: service_started
-    environment:
-      <<: *backend-env
-      DEBUG: ${DEBUG:-false}
-    command:
-      - "uv"
-      - "run"
-      - "celery"
-      - "-A"
-      - "celery_worker:celery"
-      - "worker"
-      - "--loglevel=info"
-    develop:
-      watch:
-        - path: ./backend
-          action: sync+restart
-          ignore:
-            - pyproject.toml
-            - uv.lock
-            - .venv
-          target: /backend
-        - path: ./backend/pyproject.toml
-          action: rebuild
-        - path: ./backend/uv.lock
-          action: rebuild
+        deploy:
+            resources:
+                limits:
+                    memory: 8G # Adjust based on your needs
+                reservations:
+                    memory: 4G
+        develop:
+            watch:
+                - path: ./backend
+                  action: sync+restart
+                  ignore:
+                      - pyproject.toml
+                      - uv.lock
+                      - .venv
+                  target: /backend
+                - path: ./backend/pyproject.toml
+                  action: rebuild
+                - path: ./backend/uv.lock
+                  action: rebuild
+        command:
+            - "uv"
+            - "run"
+            - "celery"
+            - "-A"
+            - "celery_worker:celery"
+            - "worker"
+            - "--loglevel=info"
+            - "--pool=solo" # Better for ML/CPU-intensive tasks
+            - "--max-tasks-per-child=10" # Prevent memory leaks
 
-  chromadb-admin:
-    image: fengzhichao/chromadb-admin
-    ports:
-      - "3001:3001"
-    environment:
-      CHROMA_SERVER_HOST: chroma
-      CHROMA_SERVER_HTTP_PORT: 8000
-    depends_on:
-      chroma:
-        condition: service_healthy
+    # ============================================
+    # ChromaDB (Vector Store)
+    # ============================================
+    chroma:
+        image: chromadb/chroma:latest
+        container_name: chromadb
+        ports:
+            - "8001:8000"
+        volumes:
+            - chroma_data:/chroma/chroma
 
+        environment:
+            CHROMA_SERVER_HOST: chroma
+            CHROMA_SERVER_HTTP_PORT: 8000
+            ANONYMIZED_TELEMETRY: False
+            CHROMA_LOG_LEVEL: info
+            IS_PERSISTENT: True
+
+    # ============================================
+    # Redis (Task Queue & Cache)
+    # ============================================
+    redis:
+        image: redis:7-alpine
+        container_name: redis
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis_data:/data
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    # ============================================
+    # ChromaDB Admin (Optional - for debugging)
+    # ============================================
+#    chromadb-admin:
+#        image: fengzhichao/chromadb-admin
+#        container_name: chromadb-admin
+#        ports:
+#            - "3001:3001"
+#        environment:
+#            CHROMA_SERVER_HOST: chroma
+#            CHROMA_SERVER_HTTP_PORT: 8000
+#            depends_on:
+#            chroma:
+#                condition: service_healthy
+#        restart: unless-stopped
+
+# ============================================
+# Volumes
+# ============================================
 volumes:
-  chroma_data:
-  redis_data:
+    chroma_data:
+        driver: local
+    redis_data:
+        driver: local
+    api-model-cache:
+        driver: local
+    worker-model-cache:
+        driver: local # This will persist heavy OCR/embedding models

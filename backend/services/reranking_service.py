@@ -11,7 +11,7 @@ class RerankingService:
         """
         Initializes the RerankingService.
         """
-                self.model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L6-v2", max_length=512)
+        self.model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L6-v2", max_length=512)
 
     def rerank_documents(
         self, query: str, retrieved_docs: Dict[str, Any]

@@ -1,8 +1,57 @@
-.venv
-.env
-.ropeproject
-rag_collecttion
-README.md
-AGENTS.md
-docs
-LICENSE
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data files (don't copy large files into build context)
+*.csv
+*.xlsx
+*.pdf
+data/
+*.db
+*.sqlite
+uploads/
+downloads/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Docs & Tests
+*.md
+docs/
+tests/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model cache (will be in volume)
+models/
+.cache/
+model-cache/

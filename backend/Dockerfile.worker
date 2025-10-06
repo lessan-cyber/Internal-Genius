@@ -1,0 +1,155 @@
+FROM python:3.12.5-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    build-essential \
+    git \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /backend
+
+# Create virtual environment
+RUN uv venv
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# This ensures ALL torch installations (including as dependencies) use CPU version
+ENV UV_INDEX_URL=https://download.pytorch.org/whl/cpu
+ENV UV_EXTRA_INDEX_URL=https://pypi.org/simple
+
+# STEP 1: Install CPU-only PyTorch explicitly (MUST be first)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install \
+    --index-strategy unsafe-best-match \
+    torch==2.5.0+cpu \
+    torchvision==0.20.0+cpu \
+    torchaudio==2.5.0+cpu
+
+# STEP 2: Install base dependencies (this might overwrite torch, so we'll reinstall after)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv sync --no-dev --index-strategy unsafe-best-match
+
+# STEP 2b: Reinstall CPU PyTorch to ensure it's not been replaced by CUDA version
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install --force-reinstall --no-deps \
+    --index-strategy unsafe-best-match \
+    torch==2.5.0+cpu \
+    torchvision==0.20.0+cpu \
+    torchaudio==2.5.0+cpu
+
+# STEP 3: Install worker dependencies WITHOUT reinstalling torch
+# Install packages that need torch first (they'll use existing CPU version)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install --index-strategy unsafe-best-match \
+    sentence-transformers>=5.1.1 \
+    numpy>=2.3.3
+
+# STEP 3b: Install docling and easyocr with --no-deps, then their non-torch dependencies
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install --no-deps docling>=2.54.0 && \
+    uv pip install --no-deps easyocr>=1.7.2 && \
+    uv pip install --no-deps docling-core>=2.48.4
+
+# STEP 3c: Install missing dependencies (everything except torch/torchvision/torchaudio)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install --index-strategy unsafe-best-match \
+    pillow opencv-python-headless pyyaml pydantic \
+    filetype tabulate python-dotenv scipy scikit-learn \
+    shapely python-bidi arabic-reshaper scikit-image pandas pypdfium2 \
+    docling_parse bs4 marko lxml openpyxl sympy cryptography mypy python-pptx \
+    python-docx pylatexenc rtree docling_ibm_models \
+    'docling-core[chunking]'
+
+# STEP 4: Verify installations
+RUN . .venv/bin/activate && \
+    python -c "import torch; print(f'PyTorch: {torch.__version__}'); assert not torch.cuda.is_available(), 'ERROR: CUDA detected!'; print('✓ CPU-only PyTorch verified')" && \
+    python -c "import torchvision; print(f'Torchvision: {torchvision.__version__}'); print('✓ Torchvision verified')" && \
+    python -c "import docling; print('✓ Docling imported')" && \
+    python -c "import easyocr; print('✓ EasyOCR imported')"
+
+# Copy application code
+COPY . .
+
+# Clean up to reduce image size
+RUN find /backend/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /backend/.venv -type f -name "*.pyc" -delete && \
+    find /backend/.venv -type f -name "*.pyo" -delete
+
+# ============================================
+# Final Stage - Runtime
+# ============================================
+FROM python:3.12.5-slim-bookworm AS final
+
+# Install runtime dependencies for OCR and document processing
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    # For PDF processing (docling)
+    poppler-utils \
+    # For image processing (easyocr)
+    libgl1 \
+    libglib2.0-0 \
+    libgomp1 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /backend
+
+# Copy uv executable from builder stage to make it available at runtime
+COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+
+# Create directories with proper permissions
+RUN mkdir -p /model-cache /data && \
+    chmod 777 /model-cache
+
+# Create non-root user
+RUN useradd --shell /usr/sbin/nologin backend && \
+    chown backend:backend /backend /data
+
+# CRITICAL FIX: Use --chown during COPY to avoid layer duplication
+COPY --from=builder --chown=backend:backend /backend/.venv ./.venv
+COPY --from=builder --chown=backend:backend /backend/ ./
+
+# Disable uv cache to prevent permission errors when running as non-root user
+ENV UV_NO_CACHE=1
+
+# Switch to non-root user
+USER backend
+
+# Environment variables
+ENV PATH="/backend/.venv/bin:${PATH}"
+ENV PYTHONPATH=/backend
+# Force CPU usage (critical for size reduction)
+ENV CUDA_VISIBLE_DEVICES=""
+# Model cache locations (will use volume)
+ENV TORCH_HOME=/model-cache
+ENV HF_HOME=/model-cache
+#ENV TRANSFORMERS_CACHE=/model-cache
+ENV EASYOCR_MODULE_PATH=/model-cache/easyocr
+
+# Optional: Pre-download models at build time (increases size but faster startup)
+# Uncomment to bake models into the image:
+# USER root
+# RUN python -c "import easyocr; reader = easyocr.Reader(['en'], model_storage_directory='/model-cache/easyocr')"
+# RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', cache_folder='/model-cache')"
+# USER backend
+
+# Default command (overridden by docker-compose)
+CMD ["celery", "-A", "celery_worker:celery", "worker", "--loglevel=info"]

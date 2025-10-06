@@ -1,27 +1,38 @@
 [project]
 name = "internal-genius"
 version = "0.1.0"
-description = "Add your description here"
+description = "RAG Application with FastAPI and Celery"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
+
+# SHARED CORE dependencies (lightweight, needed by both API and Worker)
 dependencies = [
+    "fastapi[standard]>=0.117.1",
+    "pydantic-settings>=2.11.0",
+    "redis>=6.4.0",
     "celery>=5.5.3",
     "chromadb>=1.1.0",
-    "docling>=2.54.0",
-    "easyocr>=1.7.2",
-    "fastapi[standard]>=0.117.1",
     "google-generativeai>=0.8.5",
     "langchain-google-genai>=2.0.10",
     "langgraph>=0.6.7",
-    "mypy>=1.18.2",
-    "numpy>=2.3.3",
-    "pydantic-settings>=2.11.0",
-    "redis>=6.4.0",
-    "sentence-transformers>=5.1.1",
     "sqlalchemy>=2.0.43",
-    "torch>=2.8.0",
-    "torchvision",
-    "torchaudio",
+]
+
+[project.optional-dependencies]
+# API-specific dependencies (minimal - only if needed for reranking)
+api = [
+    # Add sentence-transformers here ONLY if you do reranking/embeddings in API
+    #"sentence-transformers>=5.1.1",
+    #"numpy>=2.3.3",
+]
+
+# Worker-specific dependencies (heavy ML/OCR for document processing)
+worker = [
+    "docling>=2.54.0",
+    "easyocr>=1.7.2",
+    "sentence-transformers>=5.1.1",
+    "numpy>=2.3.3",
+    # NOTE: torch, torchvision, torchaudio are installed separately as CPU-only
 ]
 
 [dependency-groups]

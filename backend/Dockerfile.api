@@ -1,0 +1,124 @@
+FROM python:3.12.5-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    build-essential \
+    git \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+WORKDIR /backend
+
+# Create virtual environment
+RUN uv venv
+
+# Copy dependency files
+COPY pyproject.toml uv.lock ./
+
+# This ensures ALL torch installations (including as dependencies) use CPU version
+ENV UV_INDEX_URL=https://download.pytorch.org/whl/cpu
+ENV UV_EXTRA_INDEX_URL=https://pypi.org/simple
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install \
+    --index-strategy unsafe-best-match \
+    torch==2.5.0+cpu \
+    torchvision==0.20.0+cpu \
+    torchaudio==2.5.0+cpu
+
+# 2. Install base dependencies (without api extra yet)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv sync --no-dev --index-strategy unsafe-best-match
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install --force-reinstall --no-deps \
+    --index-strategy unsafe-best-match \
+    torch==2.5.0+cpu \
+    torchvision==0.20.0+cpu \
+    torchaudio==2.5.0+cpu
+
+# 3. Now install sentence-transformers (it will use existing CPU torch)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    . .venv/bin/activate && \
+    uv pip install sentence-transformers>=5.1.1 --no-deps && \
+    uv pip install \
+    numpy \
+    scikit-learn \
+    scipy \
+    tqdm \
+    huggingface-hub \
+    safetensors \
+    tokenizers \
+    transformers\
+    pillow\
+    docling-core\
+    docling
+
+
+#Verify CPU-only torch
+RUN . .venv/bin/activate && \
+    python -c "import torch; print(f'PyTorch version: {torch.__version__}'); assert not torch.cuda.is_available(), 'ERROR: CUDA detected!'; print('✓ CPU-only verified')" &&\
+    python -c "import torch; print(f'PyTorch: {torch.__version__}'); assert not torch.cuda.is_available(), 'ERROR: CUDA detected!'; print('✓ CPU-only PyTorch verified')" && \
+    python -c "import torchvision; print(f'Torchvision: {torchvision.__version__}'); print('✓ Torchvision verified')"
+
+# Copy application code
+COPY . .
+
+# Clean up
+RUN find /backend/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /backend/.venv -type f -name "*.pyc" -delete && \
+    find /backend/.venv -type f -name "*.pyo" -delete
+
+# ============================================
+# Final Stage - Runtime
+# ============================================
+FROM python:3.12.5-slim-bookworm AS final
+
+# Install minimal runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    curl \
+    libgomp1 \
+    && apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /backend
+
+# Copy uv executable from builder stage to make it available at runtime
+COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+
+# Create non-root user and directories
+RUN useradd --shell /usr/sbin/nologin backend && \
+    mkdir -p /data /model-cache && \
+    chown backend:backend /backend /data /model-cache
+
+# Use --chown to avoid layer duplication
+COPY --from=builder --chown=backend:backend /backend/.venv ./.venv
+COPY --from=builder --chown=backend:backend /backend/ ./
+
+# Disable uv cache to prevent permission errors when running as non-root user
+ENV UV_NO_CACHE=1
+
+USER backend
+
+# Environment variables
+ENV PATH="/backend/.venv/bin:${PATH}"
+ENV PYTHONPATH=/backend
+ENV CUDA_VISIBLE_DEVICES=""
+ENV TORCH_HOME=/model-cache
+ENV HF_HOME=/model-cache
+#ENV TRANSFORMERS_CACHE=/model-cache
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

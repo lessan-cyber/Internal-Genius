@@ -1,25 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Data files (don't copy large files into build context)
+*.csv
+*.xlsx
+*.pdf
+data/
+*.db
+*.sqlite
+uploads/
+downloads/
+
 # Git
-.git
+.git/
 .gitignore
+.gitattributes
 
 # Docker
+Dockerfile*
+docker-compose*.yml
 .dockerignore
-Dockerfile
 
-# Python
-.venv/
-.mypy_cache/
-.pytest_cache/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Docs & Tests
+*.md
+docs/
+tests/
+htmlcov/
+.coverage
 
-# IDE
-.idea/
-.vscode/
-.ropeproject/
+# OS
+.DS_Store
+Thumbs.db
 
-# Other
-.env
-data/
+# Model cache (will be in volume)
+models/
+.cache/
+model-cache/
