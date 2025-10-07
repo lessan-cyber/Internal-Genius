@@ -22,7 +22,7 @@ class GenerationService:
         self.llm = ChatGoogleGenerativeAI(
             model=settings.LLM_MODEL,
             temperature=settings.TEMPERATURE,
-            api_key=settings.GOOGLE_AI_API_KEY,
+            api_key=settings.GOOGLE_API_KEY,
         )
         self.prompt_template = ChatPromptTemplate.from_template(self.system_prompt)
         self.hyde_prompt_template = ChatPromptTemplate.from_template(self.hyde_prompt)

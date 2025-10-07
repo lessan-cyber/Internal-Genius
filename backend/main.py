@@ -29,4 +29,4 @@ app.include_router(document_router, prefix="/api", tags=["api"])
 
 @app.get("/")
 async def read_root():
-    return {"Hello": "from Internal Genius"}
+    return {"Hello": "from Your Internal Genius"}

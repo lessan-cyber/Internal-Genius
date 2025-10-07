@@ -6,11 +6,11 @@ class Settings(BaseSettings):
     A class to hold the application settings.
     """
 
-    GOOGLE_AI_API_KEY: str
+    GOOGLE_API_KEY: str
     CHROMA_HOST: str = "chroma"
     CHROMA_PORT: int = 8000
     EMBEDDING_MODEL: str = "models/text-embedding-004"
-    LLM_MODEL: str = "Gemini 2.0 Flash-Lite"
+    LLM_MODEL: str = "gemini-2.0-flash"
     TEMPERATURE: float = 0.3
     SYSTEM_PROMPT_PATH: str = "prompts/system_prompt.md"
     CELERY_BROKER_URL: str = "redis://redis:6379/0"

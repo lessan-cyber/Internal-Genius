@@ -14,7 +14,7 @@ class EmbeddingService:
         """
         Initializes the EmbeddingService.
         """
-        genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
 
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """

@@ -1,7 +1,7 @@
 ---
 # Common environment variables
 x-backend-env: &backend-env
-    GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY}
+    GOOGLE_API_KEY: ${GOOGLE_API_KEY}
     CHROMA_HOST: ${CHROMA_HOST}
     CHROMA_PORT: ${CHROMA_PORT}
     CELERY_BROKER_URL: ${CELERY_BROKER_URL}
@@ -96,13 +96,13 @@ services:
                     memory: 4G
         develop:
             watch:
-                - path: ./backend
+                - path: ./backend/celery_worker.py
                   action: sync+restart
                   ignore:
                       - pyproject.toml
                       - uv.lock
                       - .venv
-                  target: /backend
+                  target: /backend/celery_worker.py
                 - path: ./backend/pyproject.toml
                   action: rebuild
                 - path: ./backend/uv.lock
