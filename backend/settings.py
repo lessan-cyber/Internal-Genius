@@ -5,7 +5,6 @@ class Settings(BaseSettings):
     """
     A class to hold the application settings.
     """
-
     GOOGLE_API_KEY: str
     CHROMA_HOST: str = "chroma"
     CHROMA_PORT: int = 8000
